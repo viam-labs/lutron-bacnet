@@ -1,0 +1,26 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "hipsterbrown:lutron-bacnet",
+  "visibility": "public",
+  "url": "",
+  "description": "Modular discovery service: discover-devices",
+  "models": [
+    {
+      "api": "rdk:service:discovery",
+      "model": "hipsterbrown:lutron-bacnet:discover-devices",
+      "short_description": "Provide a short (100 characters or less) description of this model here",
+      "markdown_link": "README.md#model-hipsterbrownlutron-bacnetdiscover-devices"
+    }
+  ],
+  "entrypoint": "dist/main",
+  "first_run": "",
+  "build": {
+    "build": "./build.sh",
+    "setup": "./setup.sh",
+    "path": "dist/archive.tar.gz",
+    "arch": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
+  }
+}

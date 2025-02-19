@@ -1,0 +1,6 @@
+
+viam-sdk==0.39.0
+
+typing-extensions
+
+BAC0==2024.09.20
