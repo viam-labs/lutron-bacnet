@@ -87,6 +87,7 @@ class DiscoverDevices(Discovery, EasyResource):
             f"Discovered the following devices (count: {len(self.bacnet.discoveredDevices or {})})"
         )
         LOGGER.info(devices)
+
         configs: List[ComponentConfig] = []
 
         for deviceName, vendorName, devId, device_address, network_number in devices:
@@ -96,10 +97,24 @@ class DiscoverDevices(Discovery, EasyResource):
                 )
                 LOGGER.info(f"{deviceName} object list: {objectList}")
                 for obj_type, obj_address in objectList:
-                    objectName, objectType = await self.bacnet.readMultiple(
-                        f"{device_address} {obj_type} {obj_address} objectName objectType"
-                    )
-                    LOGGER.info(f"Point for {deviceName}: {objectName} as {objectType}")
+                    try:
+                        if obj_type == "device":
+                            continue
+
+                        objectName = await self.bacnet.read(
+                            f"{device_address} {obj_type} {obj_address} objectName"
+                        )
+                        presentValue = await self.bacnet.read(
+                            f"{device_address} {obj_type} {obj_address} presentValue"
+                        )
+                        LOGGER.info(
+                            f"Point for {deviceName}: {obj_type} {objectName} has value {presentValue}"
+                        )
+                    except Exception as readErr:
+                        LOGGER.error(
+                            f"Unable to get present value from {obj_type} at {obj_address}"
+                        )
+                        LOGGER.error(readErr)
             except Exception as err:
                 LOGGER.error(f"Error reading {deviceName}: {err}")
 

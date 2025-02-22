@@ -1,8 +1,8 @@
-#!/bin/sh
+#!/usr/bin/env bash
 cd "$(dirname "$0")" || exit
 
 # Create a virtual environment to run our code
-VENV_NAME=".venv"
+VENV_NAME=".venv-build"
 
 export PATH="$PATH:$HOME/.local/bin"
 
@@ -19,6 +19,8 @@ if ! uv venv $VENV_NAME; then
   echo "unable to create required virtual environment"
   exit 1
 fi
+
+source "./$VENV_NAME/bin/activate"
 
 if ! uv pip install -r requirements.txt; then
   echo "unable to sync requirements to venv"

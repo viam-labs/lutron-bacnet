@@ -2,7 +2,7 @@
   "$schema": "https://dl.viam.dev/module.schema.json",
   "module_id": "hipsterbrown:lutron-bacnet",
   "visibility": "public",
-  "url": "",
+  "url": "https://github.com/viam-labs/lutron-bacnet",
   "description": "Modular discovery service: discover-devices",
   "models": [
     {
