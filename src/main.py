@@ -12,7 +12,7 @@ from viam.resource.base import ResourceBase
 from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.services.discovery import Discovery
-from viam.utils import ValueTypes, dict_to_struct
+from viam.utils import ValueTypes, dict_to_struct, struct_to_dict
 
 import BAC0
 from BAC0.scripts.Lite import Lite
@@ -65,6 +65,8 @@ class DiscoverDevices(Discovery, EasyResource):
             config (ComponentConfig): The new configuration
             dependencies (Mapping[ResourceName, ResourceBase]): Any dependencies (both implicit and explicit)
         """
+        attrs = struct_to_dict(config.attributes)
+        self.max_query_concurrency = int(attrs.get("max_query_concurrency", 5))
         device_json_file = path.abspath(
             path.join(path.dirname(__file__), "device.json")
         )
@@ -77,58 +79,80 @@ class DiscoverDevices(Discovery, EasyResource):
         extra: Optional[Mapping[str, ValueTypes]] = None,
         timeout: Optional[float] = None,
     ) -> List[ComponentConfig]:
-        LOGGER.info("Looking for resources")
+        LOGGER.debug("Looking for resources")
         if self.bacnet is None:
             return []
 
         await self.bacnet._discover()
         devices = await self.bacnet._devices(_return_list=True)
-        LOGGER.info(
+        LOGGER.debug(
             f"Discovered the following devices (count: {len(self.bacnet.discoveredDevices or {})})"
         )
-        LOGGER.info(devices)
+        LOGGER.debug(devices)
 
         configs: List[ComponentConfig] = []
+        device_semaphore = asyncio.Semaphore(self.max_query_concurrency)
 
-        for deviceName, vendorName, devId, device_address, network_number in devices:
+        async def queryObjectDetails(deviceAddress, deviceObject):
+            obj_type, obj_address = deviceObject
+            baseQuery = f"{deviceAddress} {obj_type} {obj_address}"
             try:
-                objectList = await self.bacnet.read(
-                    f"{device_address} device {devId} objectList"
+                objectName = await self.bacnet.read(f"{baseQuery} objectName")
+                return {
+                    "name": str(objectName),
+                    "address": str(obj_address),
+                    "type": str(obj_type),
+                }
+            except Exception as readErr:
+                LOGGER.error(
+                    f"Unable to get object name from {obj_type} at {obj_address}"
                 )
-                LOGGER.info(f"{deviceName} object list: {objectList}")
-                for obj_type, obj_address in objectList:
-                    try:
-                        if obj_type == "device":
-                            continue
+                LOGGER.error(readErr)
+                return {
+                    "type": str(obj_type),
+                    "address": str(obj_address),
+                }
 
-                        objectName = await self.bacnet.read(
-                            f"{device_address} {obj_type} {obj_address} objectName"
-                        )
-                        presentValue = await self.bacnet.read(
-                            f"{device_address} {obj_type} {obj_address} presentValue"
-                        )
-                        LOGGER.info(
-                            f"Point for {deviceName}: {obj_type} {objectName} has value {presentValue}"
-                        )
-                    except Exception as readErr:
-                        LOGGER.error(
-                            f"Unable to get present value from {obj_type} at {obj_address}"
-                        )
-                        LOGGER.error(readErr)
+        async def queryDeviceObjects(device):
+            deviceName, vendorName, devId, device_address, network_number = device
+            objects = []
+            try:
+                async with device_semaphore:
+                    objectList = await self.bacnet.read(
+                        f"{device_address} device {devId} objectList"
+                    )
+                    if objectList is not None:
+                        objects = await asyncio.gather(*[
+                            queryObjectDetails(device_address, deviceObject)
+                            for deviceObject in objectList
+                            if str(deviceObject[0]) != "device"
+                        ])
             except Exception as err:
                 LOGGER.error(f"Error reading {deviceName}: {err}")
+            return {
+                "device": deviceName,
+                "ID": str(devId),
+                "address": str(device_address),
+                "vendor": vendorName,
+                "network": str(network_number),
+                "objects": objects,
+            }
 
+        queriedDevices = await asyncio.gather(*[
+            queryDeviceObjects(device) for device in devices
+        ])
+        LOGGER.debug(f"Finished discovery of {len(queriedDevices)} devices")
+        for device in queriedDevices:
             config = ComponentConfig(
-                name=f"{deviceName} ({vendorName})",
+                name=f"{device.get('device', 'Unknown')} ({device.get('vendor', 'Unknown')})",
                 api=str(Sensor.API),
                 model="hipsterbrown:lutron-bacnet:lutron-sensor",
-                attributes=dict_to_struct(
-                    {
-                        "devId": devId,
-                        "device_address": str(device_address),
-                        "network_number": network_number.pop(),
-                    }
-                ),
+                attributes=dict_to_struct({
+                    "devID": device.get("ID", "N/A"),
+                    "address": device.get("address", "-"),
+                    "network": device.get("network", "-"),
+                    "objects": device.get("objects", []),
+                }),
             )
             configs.append(config)
 
