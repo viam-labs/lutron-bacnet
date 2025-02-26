@@ -8,8 +8,14 @@
     {
       "api": "rdk:service:discovery",
       "model": "hipsterbrown:lutron-bacnet:discover-devices",
-      "short_description": "Provide a short (100 characters or less) description of this model here",
+      "short_description": "Discovery all BACnet devices and associated objects on the local network",
       "markdown_link": "README.md#model-hipsterbrownlutron-bacnetdiscover-devices"
+    },
+    {
+      "api": "rdk:component:sensor",
+      "model": "hipsterbrown:lutron-bacnet:lutron-sensor",
+      "short_description": "Control local BACnet devices and associated objects as a Viam sensor",
+      "markdown_link": "README.md#model-hipsterbrownlutron-bacnetlutron-sensor"
     }
   ],
   "entrypoint": "dist/main",

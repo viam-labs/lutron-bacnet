@@ -65,7 +65,8 @@ class DiscoverDevices(Discovery, EasyResource):
             dependencies (Mapping[ResourceName, ResourceBase]): Any dependencies (both implicit and explicit)
         """
         attrs = struct_to_dict(config.attributes)
-        self.max_query_concurrency = int(attrs.get("max_query_concurrency", 5))
+        self.max_query_concurrency = int(attrs.get("max_query_concurrency", 20))
+        self.semaphore = asyncio.Semaphore(self.max_query_concurrency)
         device_json_file = path.abspath(
             path.join(path.dirname(__file__), "device.json")
         )
@@ -90,18 +91,18 @@ class DiscoverDevices(Discovery, EasyResource):
         LOGGER.debug(devices)
 
         configs: List[ComponentConfig] = []
-        device_semaphore = asyncio.Semaphore(self.max_query_concurrency)
 
         async def queryObjectDetails(deviceAddress, deviceObject):
             obj_type, obj_address = deviceObject
             baseQuery = f"{deviceAddress} {obj_type} {obj_address}"
             try:
-                objectName = await self.bacnet.read(f"{baseQuery} objectName")
-                return {
-                    "name": str(objectName),
-                    "address": str(obj_address),
-                    "type": str(obj_type),
-                }
+                async with self.semaphore:
+                    objectName = await self.bacnet.read(f"{baseQuery} objectName")
+                    return {
+                        "name": str(objectName),
+                        "address": str(obj_address),
+                        "type": str(obj_type),
+                    }
             except Exception as readErr:
                 LOGGER.error(
                     f"Unable to get object name from {obj_type} at {obj_address}"
@@ -113,27 +114,24 @@ class DiscoverDevices(Discovery, EasyResource):
                 }
 
         async def queryDeviceObjects(device):
-            deviceName, vendorName, devId, device_address, network_number = device
+            deviceName, vendorName, devId, device_address, _network_number = device
             objects = []
             try:
-                async with device_semaphore:
-                    objectList = await self.bacnet.read(
-                        f"{device_address} device {devId} objectList"
-                    )
-                    if objectList is not None:
-                        objects = await asyncio.gather(*[
-                            queryObjectDetails(device_address, deviceObject)
-                            for deviceObject in objectList
-                            if str(deviceObject[0]) != "device"
-                        ])
+                objectList = await self.bacnet.read(
+                    f"{device_address} device {devId} objectList"
+                )
+                if objectList is not None:
+                    objects = await asyncio.gather(*[
+                        queryObjectDetails(device_address, deviceObject)
+                        for deviceObject in objectList
+                        if str(deviceObject[0]) != "device"
+                    ])
             except Exception as err:
                 LOGGER.error(f"Error reading {deviceName}: {err}")
             return {
                 "device": deviceName,
-                "ID": str(devId),
                 "address": str(device_address),
                 "vendor": vendorName,
-                "network": str(network_number),
                 "objects": objects,
             }
 
@@ -143,13 +141,12 @@ class DiscoverDevices(Discovery, EasyResource):
         LOGGER.debug(f"Finished discovery of {len(queriedDevices)} devices")
         for device in queriedDevices:
             config = ComponentConfig(
-                name=f"{device.get('device', 'Unknown')} ({device.get('vendor', 'Unknown')})",
+                name=f"{device.get('device', 'Unknown').replace(' ', '-')}",
                 api=str(Sensor.API),
                 model="hipsterbrown:lutron-bacnet:lutron-sensor",
                 attributes=dict_to_struct({
-                    "devID": device.get("ID", "N/A"),
                     "address": device.get("address", "-"),
-                    "network": device.get("network", "-"),
+                    "vendor": device.get("vendor", "-"),
                     "objects": device.get("objects", []),
                 }),
             )
