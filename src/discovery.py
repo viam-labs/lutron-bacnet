@@ -1,5 +1,4 @@
 import asyncio
-from os import path
 from typing import ClassVar, List, Mapping, Optional, Sequence
 
 from typing_extensions import Self
@@ -13,8 +12,7 @@ from viam.resource.types import Model, ModelFamily
 from viam.services.discovery import Discovery
 from viam.utils import ValueTypes, dict_to_struct, struct_to_dict
 
-import BAC0
-from BAC0.scripts.Lite import Lite
+from controller import BacnetController
 
 LOGGER = getLogger("lutron-bacnet:discover-devices")
 
@@ -24,7 +22,7 @@ class DiscoverDevices(Discovery, EasyResource):
         ModelFamily("hipsterbrown", "lutron-bacnet"), "discover-devices"
     )
 
-    bacnet: Optional[Lite] = None
+    bacnet: BacnetController
 
     @classmethod
     def new(
@@ -67,10 +65,7 @@ class DiscoverDevices(Discovery, EasyResource):
         attrs = struct_to_dict(config.attributes)
         self.max_query_concurrency = int(attrs.get("max_query_concurrency", 20))
         self.semaphore = asyncio.Semaphore(self.max_query_concurrency)
-        device_json_file = path.abspath(
-            path.join(path.dirname(__file__), "device.json")
-        )
-        self.bacnet = BAC0.start(json_file=device_json_file)
+        self.bacnet = BacnetController()
         return
 
     async def discover_resources(
@@ -83,10 +78,10 @@ class DiscoverDevices(Discovery, EasyResource):
         if self.bacnet is None:
             return []
 
-        await self.bacnet._discover()
-        devices = await self.bacnet._devices(_return_list=True)
+        await self.bacnet.client._discover()
+        devices = await self.bacnet.client._devices(_return_list=True)
         LOGGER.debug(
-            f"Discovered the following devices (count: {len(self.bacnet.discoveredDevices or {})})"
+            f"Discovered the following devices (count: {len(self.bacnet.client.discoveredDevices or {})})"
         )
         LOGGER.debug(devices)
 
@@ -97,7 +92,9 @@ class DiscoverDevices(Discovery, EasyResource):
             baseQuery = f"{deviceAddress} {obj_type} {obj_address}"
             try:
                 async with self.semaphore:
-                    objectName = await self.bacnet.read(f"{baseQuery} objectName")
+                    objectName = await self.bacnet.client.read(
+                        f"{baseQuery} objectName"
+                    )
                     return {
                         "name": str(objectName),
                         "address": str(obj_address),
@@ -117,7 +114,7 @@ class DiscoverDevices(Discovery, EasyResource):
             deviceName, vendorName, devId, device_address, _network_number = device
             objects = []
             try:
-                objectList = await self.bacnet.read(
+                objectList = await self.bacnet.client.read(
                     f"{device_address} device {devId} objectList"
                 )
                 if objectList is not None:
@@ -165,4 +162,4 @@ class DiscoverDevices(Discovery, EasyResource):
 
     async def close(self):
         if self.bacnet:
-            await self.bacnet._disconnect()
+            del self.bacnet

@@ -1,5 +1,4 @@
 import asyncio
-from os import path
 from typing import ClassVar, Dict, Mapping, Optional, Sequence, Any
 
 from typing_extensions import Self
@@ -13,7 +12,7 @@ from viam.resource.types import Model, ModelFamily
 from viam.utils import SensorReading, ValueTypes, struct_to_dict
 
 import BAC0
-from BAC0.scripts.Lite import Lite
+from controller import BacnetController
 
 LOGGER = getLogger("lutron-bacnet:sensor")
 
@@ -23,7 +22,7 @@ class BacnetSensor(Sensor, EasyResource):
         ModelFamily("hipsterbrown", "lutron-bacnet"), "lutron-sensor"
     )
 
-    bacnet: Optional[Lite] = None
+    bacnet: BacnetController
 
     @classmethod
     def new(
@@ -72,16 +71,17 @@ class BacnetSensor(Sensor, EasyResource):
             f"Current address: {self.address}; current device ID: {self.deviceID}"
         )
         self.objectList = list(attrs.get("objects", []))
-        device_json_file = path.abspath(
-            path.join(path.dirname(__file__), "device.json")
-        )
-        self.bacnet = BAC0.start(json_file=device_json_file)
-        object_list = [(obj.get("type"), int(obj.address)) for obj in self.objectList]
-        self.device = asyncio.run(
-            BAC0.device(
-                address=self.address, network=self.bacnet, object_list=object_list
-            )
-        )
+        self.bacnet = BacnetController()
+        # object_list = [
+        #     (obj.get("type"), int(obj.get("address"))) for obj in self.objectList
+        # ]
+        # self.device = asyncio.run(
+        #     BAC0.device(
+        #         address=self.address,
+        #         network=self.bacnet.client,
+        #         object_list=object_list,
+        #     )
+        # )
         return
 
     async def get_readings(
@@ -102,7 +102,7 @@ class BacnetSensor(Sensor, EasyResource):
             return deviceObject | {"presentValue": "N/A"}
 
         try:
-            value = await self.bacnet.read(
+            value = await self.bacnet.client.read(
                 f"{self.address} {deviceObject.get('type')} {deviceObject.get('address')} presentValue"
             )
             return deviceObject | {"presentValue": value}
@@ -122,4 +122,4 @@ class BacnetSensor(Sensor, EasyResource):
 
     async def close(self):
         if self.bacnet:
-            await self.bacnet._disconnect()
+            del self.bacnet
