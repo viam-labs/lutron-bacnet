@@ -10,8 +10,10 @@ from viam.resource.base import ResourceBase
 from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.utils import SensorReading, ValueTypes, struct_to_dict
+from bacpypes3.basetypes import PropertyIdentifier
+from bacpypes3.pdu import Address
+from bacpypes3.primitivedata import ObjectIdentifier
 
-import BAC0
 from controller import BacnetController
 
 LOGGER = getLogger("lutron-bacnet:sensor")
@@ -72,16 +74,6 @@ class BacnetSensor(Sensor, EasyResource):
         )
         self.objectList = list(attrs.get("objects", []))
         self.bacnet = BacnetController()
-        # object_list = [
-        #     (obj.get("type"), int(obj.get("address"))) for obj in self.objectList
-        # ]
-        # self.device = asyncio.run(
-        #     BAC0.device(
-        #         address=self.address,
-        #         network=self.bacnet.client,
-        #         object_list=object_list,
-        #     )
-        # )
         return
 
     async def get_readings(
@@ -111,6 +103,36 @@ class BacnetSensor(Sensor, EasyResource):
             LOGGER.error(readErr)
             return deviceObject | {"presentValue": "N/A"}
 
+    async def update(self, deviceObject: Dict) -> bool:
+        if deviceObject.get("address", None):
+            obj = [
+                obj
+                for obj in self.objectList
+                if obj.get("address") == deviceObject.get("address")
+            ].pop()
+        elif deviceObject.get("name", None):
+            obj = [
+                obj
+                for obj in self.objectList
+                if obj.get("name") == deviceObject.get("name")
+            ].pop()
+        else:
+            raise Exception("Please provide the object name or address to update.")
+
+        object_identifier = ObjectIdentifier((obj.get("type"), obj.get("address")))
+        property_identifier = PropertyIdentifier("presentValue")
+        device_address = Address(self.address)
+        bacnet_app = self.bacnet.client.this_application.app
+
+        await bacnet_app.write_property(
+            address=device_address,
+            objid=object_identifier,
+            prop=property_identifier,
+            value=deviceObject.get("value"),
+            priority=16,
+        )
+        return True
+
     async def do_command(
         self,
         command: Mapping[str, ValueTypes],
@@ -118,7 +140,14 @@ class BacnetSensor(Sensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Mapping[str, ValueTypes]:
-        raise NotImplementedError()
+        result = {key: False for key in command.keys()}
+        for name, args in command.items():
+            if name == "update":
+                response = await self.update(dict(args))
+                result[name] = response
+            else:
+                LOGGER.warning(f"Unknown command '{name}'")
+        return result
 
     async def close(self):
         if self.bacnet:
