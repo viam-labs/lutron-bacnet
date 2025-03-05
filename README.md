@@ -116,3 +116,43 @@ This component accepts an `update` command to change the present value of a obje
   }
 }
 ```
+
+## Model hipsterbrown:lutron-bacnet:lutron-switch
+
+This switch composes a BACnet "device" which references an area or individual room of lights, occupancy & lux sensors, and various automation settings known as "objects".
+Use the associated `hipsterbrown:lutron-bacnet:discover-devices` to create the necessary configuration for each device on the network.
+
+### Configuration
+The following attribute template can be used to configure this model:
+
+```json
+{
+    "address": <string>,
+    "propName": <string>,
+    "propType": <string>,
+    "propAddress": <string>,
+}
+```
+
+#### Attributes
+
+The following attributes are available for this model:
+
+| Name          | Type   | Inclusion | Description                |
+|---------------|--------|-----------|----------------------------|
+| `address` | string  | Required  | BACnet address of the device on the network, may be an IP address or network ID. |
+| `propAddress` | string  | Required  | Object ID of the property on the device. |
+| `propType` | string | Required  | May be one of the following values: "analog-value", "binary-value" |
+| `propName` | string | Optional  | The name of the control provided by this property. |
+
+#### Example Configuration
+
+```json
+{
+  "address": "1:0x00000035b9f6",
+  "propAddress": "2",
+  "propName": "Lighting Level",
+  "propType": "analog-value"
+}
+```
+

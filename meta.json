@@ -16,6 +16,12 @@
       "model": "hipsterbrown:lutron-bacnet:lutron-sensor",
       "short_description": "Control local BACnet devices and associated objects as a Viam sensor",
       "markdown_link": "README.md#model-hipsterbrownlutron-bacnetlutron-sensor"
+    },
+    {
+      "api": "rdk:component:switch",
+      "model": "hipsterbrown:lutron-bacnet:lutron-switch",
+      "short_description": "Control local BACnet devices and associated objects as a Viam switch",
+      "markdown_link": "README.md#model-hipsterbrownlutron-bacnetlutron-switch"
     }
   ],
   "entrypoint": "dist/main",
