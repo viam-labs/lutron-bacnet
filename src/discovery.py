@@ -12,9 +12,20 @@ from viam.resource.types import Model, ModelFamily
 from viam.services.discovery import Discovery
 from viam.utils import ValueTypes, dict_to_struct, struct_to_dict
 
+from internal.components.switch import Switch
+
 from controller import BacnetController
 
 LOGGER = getLogger("lutron-bacnet:discover-devices")
+
+SWITCHABLE_OBJECT_NAMES = [
+    "Lighting Level",
+    "Lighting State",
+    "Daylighting Enabled",
+    "Daylighting Level",
+    "Occupied Level",
+    "Unoccupied Level",
+]
 
 
 class DiscoverDevices(Discovery, EasyResource):
@@ -87,69 +98,88 @@ class DiscoverDevices(Discovery, EasyResource):
 
         configs: List[ComponentConfig] = []
 
-        async def queryObjectDetails(deviceAddress, deviceObject):
-            obj_type, obj_address = deviceObject
-            baseQuery = f"{deviceAddress} {obj_type} {obj_address}"
-            try:
-                async with self.semaphore:
-                    objectName = await self.bacnet.client.read(
-                        f"{baseQuery} objectName"
-                    )
-                    return {
-                        "name": str(objectName),
-                        "address": str(obj_address),
-                        "type": str(obj_type),
-                    }
-            except Exception as readErr:
-                LOGGER.error(
-                    f"Unable to get object name from {obj_type} at {obj_address}"
-                )
-                LOGGER.error(readErr)
-                return {
-                    "type": str(obj_type),
-                    "address": str(obj_address),
-                }
-
-        async def queryDeviceObjects(device):
-            deviceName, vendorName, devId, device_address, _network_number = device
-            objects = []
-            try:
-                objectList = await self.bacnet.client.read(
-                    f"{device_address} device {devId} objectList"
-                )
-                if objectList is not None:
-                    objects = await asyncio.gather(*[
-                        queryObjectDetails(device_address, deviceObject)
-                        for deviceObject in objectList
-                        if str(deviceObject[0]) != "device"
-                    ])
-            except Exception as err:
-                LOGGER.error(f"Error reading {deviceName}: {err}")
-            return {
-                "device": deviceName,
-                "address": str(device_address),
-                "vendor": vendorName,
-                "objects": objects,
-            }
-
         queriedDevices = await asyncio.gather(*[
-            queryDeviceObjects(device) for device in devices
+            self.queryDeviceObjects(device) for device in devices
         ])
+
         LOGGER.debug(f"Finished discovery of {len(queriedDevices)} devices")
         for device in queriedDevices:
+            device_name = f"{device.get('device', 'Unknown').replace(' ', '-')}"
+            device_objects = device.get("objects", [])
             config = ComponentConfig(
-                name=f"{device.get('device', 'Unknown').replace(' ', '-')}",
+                name=device_name,
                 api=str(Sensor.API),
                 model="hipsterbrown:lutron-bacnet:lutron-sensor",
                 attributes=dict_to_struct({
                     "address": device.get("address", "-"),
                     "vendor": device.get("vendor", "-"),
-                    "objects": device.get("objects", []),
+                    "objects": device_objects,
                 }),
             )
             configs.append(config)
 
+            for obj in list(
+                filter(
+                    lambda o: (o.get("name") in SWITCHABLE_OBJECT_NAMES), device_objects
+                )
+            ):
+                obj_name = obj.get("name", "-")
+                configs.append(
+                    ComponentConfig(
+                        name=f"{obj_name.replace(' ', '-')}-{device_name}",
+                        api=str(Switch.API),
+                        model="hipsterbrown:lutron-bacnet:lutron-switch",
+                        attributes=dict_to_struct({
+                            "address": device.get("address", "-"),
+                            "propAddress": obj.get("address", "-"),
+                            "propType": obj.get("type", "-"),
+                            "propName": obj_name,
+                        }),
+                    )
+                )
+
         return configs
+
+    async def queryObjectDetails(self, deviceAddress, deviceObject):
+        obj_type, obj_address = deviceObject
+        baseQuery = f"{deviceAddress} {obj_type} {obj_address}"
+        try:
+            async with self.semaphore:
+                objectName = await self.bacnet.client.read(f"{baseQuery} objectName")
+                return {
+                    "name": str(objectName),
+                    "address": str(obj_address),
+                    "type": str(obj_type),
+                }
+        except Exception as readErr:
+            LOGGER.error(f"Unable to get object name from {obj_type} at {obj_address}")
+            LOGGER.error(readErr)
+            return {
+                "type": str(obj_type),
+                "address": str(obj_address),
+            }
+
+    async def queryDeviceObjects(self, device):
+        deviceName, vendorName, devId, device_address, _network_number = device
+        objects = []
+        try:
+            objectList = await self.bacnet.client.read(
+                f"{device_address} device {devId} objectList"
+            )
+            if objectList is not None:
+                objects = await asyncio.gather(*[
+                    self.queryObjectDetails(device_address, deviceObject)
+                    for deviceObject in objectList
+                    if str(deviceObject[0]) != "device"
+                ])
+        except Exception as err:
+            LOGGER.error(f"Error reading {deviceName}: {err}")
+        return {
+            "device": deviceName,
+            "address": str(device_address),
+            "vendor": vendorName,
+            "objects": objects,
+        }
 
     async def do_command(
         self,
