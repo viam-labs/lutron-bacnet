@@ -1,5 +1,5 @@
 
-viam-sdk==0.42.0
+viam-sdk==0.63.0
 
 typing-extensions
 

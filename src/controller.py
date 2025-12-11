@@ -1,3 +1,4 @@
+from logging import Logger, getLogger
 from os import path
 from threading import Lock
 from typing import Self
@@ -12,6 +13,7 @@ class BacnetController:
     _ref_count = 0
     _refs = set()
     client: Lite
+    logger: Logger
 
     def __new__(cls) -> Self:
         with cls._lock:
@@ -20,7 +22,7 @@ class BacnetController:
                 cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self) -> None:
+    def __init__(self, logger: Logger = getLogger("BacnetController")) -> None:
         with self._lock:
             if not self._initialized:
                 self._initialized = True
@@ -28,6 +30,8 @@ class BacnetController:
                     path.join(path.dirname(__file__), "device.json")
                 )
                 self.client = BAC0.start(json_file=device_json_file)
+                self.logger = logger
+                self.logger.info("New controller created!")
 
             type(self)._ref_count += 1
             ref = weakref.ref(self, self._cleanup)

@@ -1,9 +1,9 @@
 import asyncio
-from typing import ClassVar, List, Mapping, Optional, Sequence
+from typing import ClassVar, List, Mapping, Optional, Sequence, Tuple
 
 from typing_extensions import Self
 from viam.components.sensor import Sensor
-from viam.logging import getLogger
+from viam.components.switch import Switch
 from viam.proto.app.robot import ComponentConfig
 from viam.proto.common import ResourceName
 from viam.resource.base import ResourceBase
@@ -12,11 +12,7 @@ from viam.resource.types import Model, ModelFamily
 from viam.services.discovery import Discovery
 from viam.utils import ValueTypes, dict_to_struct, struct_to_dict
 
-from internal.components.switch import Switch
-
 from controller import BacnetController
-
-LOGGER = getLogger("lutron-bacnet:discover-devices")
 
 SWITCHABLE_OBJECT_NAMES = [
     "Lighting Level",
@@ -49,10 +45,14 @@ class DiscoverDevices(Discovery, EasyResource):
         Returns:
             Self: The resource
         """
-        return super().new(config, dependencies)
+        self = super().new(config, dependencies)
+        self.reconfigure(config, dependencies)
+        return self
 
     @classmethod
-    def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
+    def validate_config(
+        cls, config: ComponentConfig
+    ) -> Tuple[Sequence[str], Sequence[str]]:
         """This method allows you to validate the configuration object received from the machine,
         as well as to return any implicit dependencies based on that `config`.
 
@@ -62,7 +62,7 @@ class DiscoverDevices(Discovery, EasyResource):
         Returns:
             Sequence[str]: A list of implicit dependencies
         """
-        return []
+        return [], []
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -76,7 +76,8 @@ class DiscoverDevices(Discovery, EasyResource):
         attrs = struct_to_dict(config.attributes)
         self.max_query_concurrency = int(attrs.get("max_query_concurrency", 20))
         self.semaphore = asyncio.Semaphore(self.max_query_concurrency)
-        self.bacnet = BacnetController()
+        self.bacnet = BacnetController(logger=self.logger)
+
         return
 
     async def discover_resources(
@@ -85,58 +86,63 @@ class DiscoverDevices(Discovery, EasyResource):
         extra: Optional[Mapping[str, ValueTypes]] = None,
         timeout: Optional[float] = None,
     ) -> List[ComponentConfig]:
-        LOGGER.debug("Looking for resources")
+        self.logger.debug("Looking for resources")
         if self.bacnet is None:
+            self.logger.warning("BacnetController not initialized")
             return []
-
-        await self.bacnet.client._discover()
-        devices = await self.bacnet.client._devices(_return_list=True)
-        LOGGER.debug(
-            f"Discovered the following devices (count: {len(self.bacnet.client.discoveredDevices or {})})"
-        )
-        LOGGER.debug(devices)
 
         configs: List[ComponentConfig] = []
 
-        queriedDevices = await asyncio.gather(*[
-            self.queryDeviceObjects(device) for device in devices
-        ])
-
-        LOGGER.debug(f"Finished discovery of {len(queriedDevices)} devices")
-        for device in queriedDevices:
-            device_name = f"{device.get('device', 'Unknown').replace(' ', '-')}"
-            device_objects = device.get("objects", [])
-            config = ComponentConfig(
-                name=device_name,
-                api=str(Sensor.API),
-                model="hipsterbrown:lutron-bacnet:lutron-sensor",
-                attributes=dict_to_struct({
-                    "address": device.get("address", "-"),
-                    "vendor": device.get("vendor", "-"),
-                    "objects": device_objects,
-                }),
+        try:
+            await self.bacnet.client._discover()
+            devices = await self.bacnet.client._devices(_return_list=True)
+            self.logger.debug(
+                f"Discovered the following devices (count: {len(self.bacnet.client.discoveredDevices or {})})"
             )
-            configs.append(config)
+            self.logger.debug(devices)
 
-            for obj in list(
-                filter(
-                    lambda o: (o.get("name") in SWITCHABLE_OBJECT_NAMES), device_objects
+            queriedDevices = await asyncio.gather(*[
+                self.queryDeviceObjects(device) for device in devices
+            ])
+
+            self.logger.debug(f"Finished discovery of {len(queriedDevices)} devices")
+            for device in queriedDevices:
+                device_name = f"{device.get('device', 'Unknown').replace(' ', '-')}"
+                device_objects = device.get("objects", [])
+                config = ComponentConfig(
+                    name=device_name,
+                    api=str(Sensor.API),
+                    model="hipsterbrown:lutron-bacnet:lutron-sensor",
+                    attributes=dict_to_struct({
+                        "address": device.get("address", "-"),
+                        "vendor": device.get("vendor", "-"),
+                        "objects": device_objects,
+                    }),
                 )
-            ):
-                obj_name = obj.get("name", "-")
-                configs.append(
-                    ComponentConfig(
-                        name=f"{obj_name.replace(' ', '-')}-{device_name}",
-                        api=str(Switch.API),
-                        model="hipsterbrown:lutron-bacnet:lutron-switch",
-                        attributes=dict_to_struct({
-                            "address": device.get("address", "-"),
-                            "propAddress": obj.get("address", "-"),
-                            "propType": obj.get("type", "-"),
-                            "propName": obj_name,
-                        }),
+                configs.append(config)
+
+                for obj in list(
+                    filter(
+                        lambda o: (o.get("name") in SWITCHABLE_OBJECT_NAMES),
+                        device_objects,
                     )
-                )
+                ):
+                    obj_name = obj.get("name", "-")
+                    configs.append(
+                        ComponentConfig(
+                            name=f"{obj_name.replace(' ', '-')}-{device_name}",
+                            api=str(Switch.API),
+                            model="hipsterbrown:lutron-bacnet:lutron-switch",
+                            attributes=dict_to_struct({
+                                "address": device.get("address", "-"),
+                                "propAddress": obj.get("address", "-"),
+                                "propType": obj.get("type", "-"),
+                                "propName": obj_name,
+                            }),
+                        )
+                    )
+        except Exception as err:
+            self.logger.error(f"Error trying to discover devices: {err}")
 
         return configs
 
@@ -152,8 +158,10 @@ class DiscoverDevices(Discovery, EasyResource):
                     "type": str(obj_type),
                 }
         except Exception as readErr:
-            LOGGER.error(f"Unable to get object name from {obj_type} at {obj_address}")
-            LOGGER.error(readErr)
+            self.logger.error(
+                f"Unable to get object name from {obj_type} at {obj_address}"
+            )
+            self.logger.error(readErr)
             return {
                 "type": str(obj_type),
                 "address": str(obj_address),
@@ -173,7 +181,7 @@ class DiscoverDevices(Discovery, EasyResource):
                     if str(deviceObject[0]) != "device"
                 ])
         except Exception as err:
-            LOGGER.error(f"Error reading {deviceName}: {err}")
+            self.logger.error(f"Error reading {deviceName}: {err}")
         return {
             "device": deviceName,
             "address": str(device_address),

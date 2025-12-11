@@ -1,9 +1,8 @@
 import asyncio
-from typing import ClassVar, Dict, Mapping, Optional, Sequence, Any
+from typing import ClassVar, Dict, Mapping, Optional, Sequence, Any, Tuple
 
 from typing_extensions import Self
 from viam.components.sensor import Sensor
-from viam.logging import getLogger
 from viam.proto.app.robot import ComponentConfig
 from viam.proto.common import ResourceName
 from viam.resource.base import ResourceBase
@@ -15,8 +14,6 @@ from bacpypes3.pdu import Address
 from bacpypes3.primitivedata import ObjectIdentifier
 
 from controller import BacnetController
-
-LOGGER = getLogger("lutron-bacnet:sensor")
 
 
 class BacnetSensor(Sensor, EasyResource):
@@ -40,10 +37,14 @@ class BacnetSensor(Sensor, EasyResource):
         Returns:
             Self: The resource
         """
-        return super().new(config, dependencies)
+        self = super().new(config, dependencies)
+        self.reconfigure(config, dependencies)
+        return self
 
     @classmethod
-    def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
+    def validate_config(
+        cls, config: ComponentConfig
+    ) -> Tuple[Sequence[str], Sequence[str]]:
         """This method allows you to validate the configuration object received from the machine,
         as well as to return any implicit dependencies based on that `config`.
 
@@ -53,7 +54,7 @@ class BacnetSensor(Sensor, EasyResource):
         Returns:
             Sequence[str]: A list of implicit dependencies
         """
-        return []
+        return [], []
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -69,11 +70,11 @@ class BacnetSensor(Sensor, EasyResource):
 
         self.networkId, self.deviceID = self.address.split(":")
         self.deviceID = int(self.deviceID, 16)
-        LOGGER.info(
+        self.logger.info(
             f"Current address: {self.address}; current device ID: {self.deviceID}"
         )
         self.objectList = list(attrs.get("objects", []))
-        self.bacnet = BacnetController()
+        self.bacnet = BacnetController(logger=self.logger)
         return
 
     async def get_readings(
@@ -99,8 +100,10 @@ class BacnetSensor(Sensor, EasyResource):
             )
             return deviceObject | {"presentValue": value}
         except Exception as readErr:
-            LOGGER.error(f"Unable to get present value for {deviceObject.get('name')}")
-            LOGGER.error(readErr)
+            self.logger.error(
+                f"Unable to get present value for {deviceObject.get('name')}"
+            )
+            self.logger.error(readErr)
             return deviceObject | {"presentValue": "N/A"}
 
     async def update(self, deviceObject: Dict) -> bool:
@@ -146,7 +149,7 @@ class BacnetSensor(Sensor, EasyResource):
                 response = await self.update(dict(args))
                 result[name] = response
             else:
-                LOGGER.warning(f"Unknown command '{name}'")
+                self.logger.warning(f"Unknown command '{name}'")
         return result
 
     async def close(self):

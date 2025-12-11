@@ -1,9 +1,7 @@
-import asyncio
-from typing import ClassVar, Dict, Mapping, Optional, Sequence
+from typing import ClassVar, Mapping, Optional, Sequence, Tuple, Any
 
 from typing_extensions import Self
-from internal.components.switch import Switch
-from viam.logging import getLogger
+from viam.components.switch import Switch
 from viam.proto.app.robot import ComponentConfig
 from viam.proto.common import ResourceName
 from viam.resource.base import ResourceBase
@@ -15,8 +13,6 @@ from bacpypes3.pdu import Address
 from bacpypes3.primitivedata import ObjectIdentifier
 
 from controller import BacnetController
-
-LOGGER = getLogger("lutron-bacnet:switch")
 
 
 class BacnetSensor(Switch, EasyResource):
@@ -40,10 +36,14 @@ class BacnetSensor(Switch, EasyResource):
         Returns:
             Self: The resource
         """
-        return super().new(config, dependencies)
+        self = super().new(config, dependencies)
+        self.reconfigure(config, dependencies)
+        return self
 
     @classmethod
-    def validate_config(cls, config: ComponentConfig) -> Sequence[str]:
+    def validate_config(
+        cls, config: ComponentConfig
+    ) -> Tuple[Sequence[str], Sequence[str]]:
         """This method allows you to validate the configuration object received from the machine,
         as well as to return any implicit dependencies based on that `config`.
 
@@ -53,7 +53,7 @@ class BacnetSensor(Switch, EasyResource):
         Returns:
             Sequence[str]: A list of implicit dependencies
         """
-        return []
+        return [], []
 
     def reconfigure(
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
@@ -69,16 +69,22 @@ class BacnetSensor(Switch, EasyResource):
 
         self.networkId, self.deviceID = self.address.split(":")
         self.deviceID = int(self.deviceID, 16)
-        LOGGER.info(
+        self.logger.info(
             f"Current address: {self.address}; current device ID: {self.deviceID}"
         )
         self.propName = str(attrs.get("propName", "N/A"))
         self.propAddress = str(attrs.get("propAddress", None))
         self.propType = str(attrs.get("propType", None))
-        self.bacnet = BacnetController()
+        self.bacnet = BacnetController(logger=self.logger)
         return
 
-    async def get_position(self) -> int:
+    async def get_position(
+        self,
+        *,
+        extra: Optional[Mapping[str, Any]] = None,
+        timeout: Optional[float] = None,
+        **kwargs,
+    ) -> int:
         present_value = await self.get_present_value_for_object()
         if self.propType == "binary-value":
             return int(present_value)
@@ -87,14 +93,27 @@ class BacnetSensor(Switch, EasyResource):
             return int(clamped_value // 20)
         return 0
 
-    async def set_position(self, position: int) -> None:
+    async def set_position(
+        self,
+        position: int,
+        *,
+        extra: Optional[Mapping[str, Any]] = None,
+        timeout: Optional[float] = None,
+        **kwargs,
+    ) -> None:
         if self.propType == "binary-value":
             await self.update(position)
         if self.propType == "analog-value":
             clamped_value = max(0, min(4, int(position)))
             await self.update(int(clamped_value * 20))
 
-    async def get_number_of_positions(self) -> int:
+    async def get_number_of_positions(
+        self,
+        *,
+        extra: Optional[Mapping[str, Any]] = None,
+        timeout: Optional[float] = None,
+        **kwargs,
+    ) -> int:
         if self.propType == "analog-value":
             return 5
         if self.propType == "binary-value":
@@ -111,8 +130,8 @@ class BacnetSensor(Switch, EasyResource):
             )
             return value
         except Exception as readErr:
-            LOGGER.error(f"Unable to get present value for {self.propName}")
-            LOGGER.error(readErr)
+            self.logger.error(f"Unable to get present value for {self.propName}")
+            self.logger.error(readErr)
             return None
 
     async def update(self, value: int) -> bool:
@@ -139,7 +158,7 @@ class BacnetSensor(Switch, EasyResource):
     ) -> Mapping[str, ValueTypes]:
         result = {key: False for key in command.keys()}
         for name, args in command.items():
-            LOGGER.warning(f"Unknown command '{name}'")
+            self.logger.warning(f"Unknown command '{name}'")
         return result
 
     async def close(self):
