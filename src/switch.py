@@ -75,7 +75,7 @@ class BacnetSensor(Switch, EasyResource):
         self.propName = str(attrs.get("propName", "N/A"))
         self.propAddress = str(attrs.get("propAddress", None))
         self.propType = str(attrs.get("propType", None))
-        self.bacnet = BacnetController(logger=self.logger)
+        self.bacnet = BacnetController()
         return
 
     async def get_position(

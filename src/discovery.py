@@ -76,7 +76,7 @@ class DiscoverDevices(Discovery, EasyResource):
         attrs = struct_to_dict(config.attributes)
         self.max_query_concurrency = int(attrs.get("max_query_concurrency", 20))
         self.semaphore = asyncio.Semaphore(self.max_query_concurrency)
-        self.bacnet = BacnetController(logger=self.logger)
+        self.bacnet = BacnetController()
 
         return
 

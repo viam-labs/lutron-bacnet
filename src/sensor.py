@@ -74,7 +74,7 @@ class BacnetSensor(Sensor, EasyResource):
             f"Current address: {self.address}; current device ID: {self.deviceID}"
         )
         self.objectList = list(attrs.get("objects", []))
-        self.bacnet = BacnetController(logger=self.logger)
+        self.bacnet = BacnetController()
         return
 
     async def get_readings(
