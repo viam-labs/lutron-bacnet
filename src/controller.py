@@ -2,7 +2,6 @@ from logging import Logger, getLogger
 from os import path
 from threading import Lock
 from typing import Self
-import weakref
 import BAC0
 from BAC0.scripts.Lite import Lite
 
@@ -11,7 +10,6 @@ class BacnetController:
     _instance = None
     _lock = Lock()
     _ref_count = 0
-    _refs = set()
     client: Lite
     logger: Logger
 
@@ -34,22 +32,11 @@ class BacnetController:
                 self.logger.info("New controller created!")
 
             type(self)._ref_count += 1
-            ref = weakref.ref(self, self._cleanup)
-            type(self)._refs.add(ref)
 
-    @classmethod
-    def _cleanup(cls, ref):
-        with cls._lock:
-            if ref in cls._refs:
-                cls._refs.remove(ref)
-                cls._ref_count -= 1
-
-                if cls._ref_count == 0 and cls._instance:
-                    cls._instance.client.disconnect()
-                    cls._instance = None
-
-    def __del__(self):
+    def release(self):
         with type(self)._lock:
             type(self)._ref_count -= 1
-            if type(self)._ref_count <= 0:
+            if type(self)._ref_count <= 0 and type(self)._instance is not None:
                 self.client.disconnect()
+                type(self)._instance = None
+                type(self)._ref_count = 0

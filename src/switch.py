@@ -163,4 +163,5 @@ class BacnetSensor(Switch, EasyResource):
 
     async def close(self):
         if self.bacnet:
-            del self.bacnet
+            self.bacnet.release()
+            self.bacnet = None
