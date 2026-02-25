@@ -22,6 +22,11 @@
       "model": "hipsterbrown:lutron-bacnet:lutron-switch",
       "short_description": "Control local BACnet devices and associated objects as a Viam switch",
       "markdown_link": "README.md#model-hipsterbrownlutron-bacnetlutron-switch"
+    },
+    {
+      "api": "rdk:component:button",
+      "model": "hipsterbrown:lutron-bacnet:discovery-button",
+      "short_description": "Discover BACnet devices and apply the results as a machine configuration"
     }
   ],
   "entrypoint": "dist/main",
