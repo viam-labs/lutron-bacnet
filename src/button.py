@@ -1,3 +1,4 @@
+import os
 from typing import Any, ClassVar, List, Mapping, Optional, Sequence, Tuple
 
 from typing_extensions import Self
@@ -11,7 +12,9 @@ from viam.resource.types import Model, ModelFamily
 from viam.services.discovery import Discovery
 from viam.utils import ValueTypes, struct_to_dict
 
+
 LUTRON_MODEL_PREFIX = "hipsterbrown:lutron-bacnet:lutron-"
+
 
 class DiscoveryButton(Button, EasyResource):
     MODEL: ClassVar[Model] = Model(
@@ -19,7 +22,6 @@ class DiscoveryButton(Button, EasyResource):
     )
 
     discovery: Discovery
-    machine_part_id: str
     capture_frequency_hz: float
     _last_config: Optional[List[dict]]
 
@@ -39,9 +41,6 @@ class DiscoveryButton(Button, EasyResource):
         discovery_service = attrs.get("discovery_service")
         if not discovery_service:
             raise ValueError("discovery_service attribute is required")
-        machine_part_id = attrs.get("machine_part_id")
-        if not machine_part_id:
-            raise ValueError("machine_part_id attribute is required")
         implicit_deps = [f"rdk:service:discovery/{discovery_service}"]
         return implicit_deps, []
 
@@ -49,7 +48,6 @@ class DiscoveryButton(Button, EasyResource):
         self, config: ComponentConfig, dependencies: Mapping[ResourceName, ResourceBase]
     ):
         attrs = struct_to_dict(config.attributes)
-        self.machine_part_id = str(attrs.get("machine_part_id", ""))
         self.capture_frequency_hz = float(attrs.get("capture_frequency_hz", 0))
         self._last_config = None
 
@@ -61,6 +59,30 @@ class DiscoveryButton(Button, EasyResource):
             name=discovery_service_name,
         )
         self.discovery = dependencies[discovery_resource_name]  # type: ignore
+
+    async def _resolve_machine_part(self, viam_client: ViamClient) -> Tuple[str, str]:
+        """Resolve the current machine's part ID and name using env vars."""
+        org_id = os.environ.get("VIAM_PRIMARY_ORG_ID")
+        machine_fqdn = os.environ.get("VIAM_MACHINE_FQDN")
+        if not org_id or not machine_fqdn:
+            raise RuntimeError(
+                "VIAM_PRIMARY_ORG_ID and VIAM_MACHINE_FQDN environment "
+                "variables are required to resolve the machine part"
+            )
+
+        app = viam_client.app_client
+        locations = await app.list_locations(org_id)
+        for location in locations:
+            robots = await app.list_robots(location.id)
+            for robot in robots:
+                parts = await app.get_robot_parts(robot.id)
+                for part in parts:
+                    if part.fqdn == machine_fqdn:
+                        return part.id, part.name
+
+        raise RuntimeError(
+            f"Could not find a machine part matching FQDN '{machine_fqdn}'"
+        )
 
     async def push(
         self,
@@ -79,8 +101,11 @@ class DiscoveryButton(Button, EasyResource):
 
         viam_client = await ViamClient.create_from_env_vars()
         try:
+            part_id, part_name = await self._resolve_machine_part(viam_client)
+            self.logger.info(f"Resolved machine part: {part_name} ({part_id})")
+
             app = viam_client.app_client
-            part = await app.get_robot_part(self.machine_part_id)
+            part = await app.get_robot_part(part_id)
             current_config: dict = dict(part.robot_config or {})
 
             existing_components: List[dict] = list(
@@ -96,8 +121,8 @@ class DiscoveryButton(Button, EasyResource):
             merged_config["components"] = merged_components
 
             await app.update_robot_part(
-                robot_part_id=self.machine_part_id,
-                name=part.name,
+                robot_part_id=part_id,
+                name=part_name,
                 robot_config=merged_config,
             )
             self.logger.info(
