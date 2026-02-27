@@ -15,7 +15,7 @@ from bacpypes3.primitivedata import ObjectIdentifier
 from controller import BacnetController
 
 
-class BacnetSensor(Switch, EasyResource):
+class BacnetSwitch(Switch, EasyResource):
     MODEL: ClassVar[Model] = Model(
         ModelFamily("hipsterbrown", "lutron-bacnet"), "lutron-switch"
     )
