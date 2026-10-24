@@ -108,11 +108,10 @@ class DiscoveryButton(Button, EasyResource):
             part = await app.get_robot_part(part_id)
             current_config: dict = dict(part.robot_config or {})
 
-            existing_components: List[dict] = list(
-                current_config.get("components", [])
-            )
+            existing_components: List[dict] = list(current_config.get("components", []))
             preserved = [
-                c for c in existing_components
+                c
+                for c in existing_components
                 if not str(c.get("model", "")).startswith(LUTRON_MODEL_PREFIX)
             ]
             merged_components = preserved + new_components

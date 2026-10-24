@@ -84,10 +84,12 @@ class BacnetSensor(Sensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Mapping[str, SensorReading]:
-        readings = await asyncio.gather(*[
-            self.get_present_value_for_object(deviceObject)
-            for deviceObject in self.objectList
-        ])
+        readings = await asyncio.gather(
+            *[
+                self.get_present_value_for_object(deviceObject)
+                for deviceObject in self.objectList
+            ]
+        )
         return {reading["name"]: reading for reading in readings}
 
     async def get_present_value_for_object(self, deviceObject: Dict):
