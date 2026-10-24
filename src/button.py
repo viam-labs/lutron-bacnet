@@ -12,7 +12,6 @@ from viam.resource.types import Model, ModelFamily
 from viam.services.discovery import Discovery
 from viam.utils import ValueTypes, struct_to_dict
 
-
 LUTRON_MODEL_PREFIX = "hipsterbrown:lutron-bacnet:lutron-"
 
 
