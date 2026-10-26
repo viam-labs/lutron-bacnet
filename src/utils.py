@@ -1,5 +1,5 @@
-import socket
 import random
+import socket
 
 
 def get_available_port(start_range=47809, end_range=65535):

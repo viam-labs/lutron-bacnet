@@ -1,6 +1,9 @@
 import asyncio
-from typing import ClassVar, Dict, Mapping, Optional, Sequence, Any, Tuple
+from typing import Any, ClassVar, Dict, Mapping, Optional, Sequence, Tuple
 
+from bacpypes3.basetypes import PropertyIdentifier
+from bacpypes3.pdu import Address
+from bacpypes3.primitivedata import ObjectIdentifier
 from typing_extensions import Self
 from viam.components.sensor import Sensor
 from viam.proto.app.robot import ComponentConfig
@@ -9,9 +12,6 @@ from viam.resource.base import ResourceBase
 from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.utils import SensorReading, ValueTypes, struct_to_dict
-from bacpypes3.basetypes import PropertyIdentifier
-from bacpypes3.pdu import Address
-from bacpypes3.primitivedata import ObjectIdentifier
 
 from controller import BacnetController
 
@@ -84,10 +84,12 @@ class BacnetSensor(Sensor, EasyResource):
         timeout: Optional[float] = None,
         **kwargs,
     ) -> Mapping[str, SensorReading]:
-        readings = await asyncio.gather(*[
-            self.get_present_value_for_object(deviceObject)
-            for deviceObject in self.objectList
-        ])
+        readings = await asyncio.gather(
+            *[
+                self.get_present_value_for_object(deviceObject)
+                for deviceObject in self.objectList
+            ]
+        )
         return {reading["name"]: reading for reading in readings}
 
     async def get_present_value_for_object(self, deviceObject: Dict):

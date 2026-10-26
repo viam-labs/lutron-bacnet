@@ -101,9 +101,9 @@ class DiscoverDevices(Discovery, EasyResource):
             )
             self.logger.debug(devices)
 
-            queriedDevices = await asyncio.gather(*[
-                self.queryDeviceObjects(device) for device in devices
-            ])
+            queriedDevices = await asyncio.gather(
+                *[self.queryDeviceObjects(device) for device in devices]
+            )
 
             self.logger.debug(f"Finished discovery of {len(queriedDevices)} devices")
             for device in queriedDevices:
@@ -113,17 +113,19 @@ class DiscoverDevices(Discovery, EasyResource):
                     name=device_name,
                     api=str(Sensor.API),
                     model="hipsterbrown:lutron-bacnet:lutron-sensor",
-                    attributes=dict_to_struct({
-                        "address": device.get("address", "-"),
-                        "vendor": device.get("vendor", "-"),
-                        "objects": device_objects,
-                    }),
+                    attributes=dict_to_struct(
+                        {
+                            "address": device.get("address", "-"),
+                            "vendor": device.get("vendor", "-"),
+                            "objects": device_objects,
+                        }
+                    ),
                 )
                 configs.append(config)
 
                 for obj in list(
                     filter(
-                        lambda o: (o.get("name") in SWITCHABLE_OBJECT_NAMES),
+                        lambda o: o.get("name") in SWITCHABLE_OBJECT_NAMES,
                         device_objects,
                     )
                 ):
@@ -133,12 +135,14 @@ class DiscoverDevices(Discovery, EasyResource):
                             name=f"{obj_name.replace(' ', '-')}-{device_name}",
                             api=str(Switch.API),
                             model="hipsterbrown:lutron-bacnet:lutron-switch",
-                            attributes=dict_to_struct({
-                                "address": device.get("address", "-"),
-                                "propAddress": obj.get("address", "-"),
-                                "propType": obj.get("type", "-"),
-                                "propName": obj_name,
-                            }),
+                            attributes=dict_to_struct(
+                                {
+                                    "address": device.get("address", "-"),
+                                    "propAddress": obj.get("address", "-"),
+                                    "propType": obj.get("type", "-"),
+                                    "propName": obj_name,
+                                }
+                            ),
                         )
                     )
         except Exception as err:
@@ -175,11 +179,13 @@ class DiscoverDevices(Discovery, EasyResource):
                 f"{device_address} device {devId} objectList"
             )
             if objectList is not None:
-                objects = await asyncio.gather(*[
-                    self.queryObjectDetails(device_address, deviceObject)
-                    for deviceObject in objectList
-                    if str(deviceObject[0]) != "device"
-                ])
+                objects = await asyncio.gather(
+                    *[
+                        self.queryObjectDetails(device_address, deviceObject)
+                        for deviceObject in objectList
+                        if str(deviceObject[0]) != "device"
+                    ]
+                )
         except Exception as err:
             self.logger.error(f"Error reading {deviceName}: {err}")
         return {

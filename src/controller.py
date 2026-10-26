@@ -1,8 +1,9 @@
+import weakref
 from logging import Logger, getLogger
 from os import path
 from threading import Lock
 from typing import Self
-import weakref
+
 import BAC0
 from BAC0.scripts.Lite import Lite
 

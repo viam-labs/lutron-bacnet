@@ -1,5 +1,8 @@
-from typing import ClassVar, Mapping, Optional, Sequence, Tuple, Any
+from typing import Any, ClassVar, Mapping, Optional, Sequence, Tuple
 
+from bacpypes3.basetypes import PropertyIdentifier
+from bacpypes3.pdu import Address
+from bacpypes3.primitivedata import ObjectIdentifier
 from typing_extensions import Self
 from viam.components.switch import Switch
 from viam.proto.app.robot import ComponentConfig
@@ -8,9 +11,6 @@ from viam.resource.base import ResourceBase
 from viam.resource.easy_resource import EasyResource
 from viam.resource.types import Model, ModelFamily
 from viam.utils import ValueTypes, struct_to_dict
-from bacpypes3.basetypes import PropertyIdentifier
-from bacpypes3.pdu import Address
-from bacpypes3.primitivedata import ObjectIdentifier
 
 from controller import BacnetController
 
